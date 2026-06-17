@@ -1,77 +1,77 @@
-# 小红书配置指南
+# XiaoHongShu Setup Guide
 
-## 功能说明
-读取和搜索小红书笔记。通过 [xhs-cli](https://github.com/jackwener/xiaohongshu-cli)（⭐1.5K，pipx 一行安装）实现。
+## Overview
+Read and search XiaoHongShu notes. Powered by [xhs-cli](https://github.com/jackwener/xiaohongshu-cli) (⭐1.5K, single-line pipx install).
 
-## 前置条件
-- Python 3.10+（pipx 安装）
-- 浏览器已登录 xiaohongshu.com（用于导出 Cookie）
+## Prerequisites
+- Python 3.10+ (pipx installed)
+- Browser logged into xiaohongshu.com (for Cookie export)
 
-## Agent 可自动完成的步骤
+## Steps the agent can complete automatically
 
-### 1. 安装 xhs-cli
+### 1. Install xhs-cli
 ```bash
 pipx install xiaohongshu-cli
 ```
 
-### 2. 登录（从浏览器提取 Cookie）
+### 2. Login (extract Cookie from browser)
 ```bash
 xhs login
 ```
 
-> 这会自动从浏览器提取 Cookie。如果自动提取失败，可以手动导入（见下方）。
+> This automatically extracts cookies from the browser. If auto-extraction fails, manual import is possible (see below).
 
-### 3. 验证
+### 3. Verify
 ```bash
 agent-reach doctor
 ```
 
-应该看到小红书显示为 ✅。
+Should show XiaoHongShu as ✅.
 
-## 需要用户手动做的步骤
+## Steps requiring user action
 
-如果 `xhs login` 自动提取失败，需要手动导入 cookies：
+If `xhs login` auto-extraction fails, manually import cookies:
 
-> **推荐方式：Cookie-Editor 浏览器导出（最可靠）**
+> **Recommended method: Cookie-Editor browser export (most reliable)**
 >
-> 1. 在 Chrome 中安装 [Cookie-Editor](https://chromewebstore.google.com/detail/cookie-editor/hlkenndednhfkekhgcdicdfddnkalmdm) 扩展
-> 2. 浏览器登录 xiaohongshu.com
-> 3. 点击 Cookie-Editor 图标 → Export → Header String
-> 4. 把导出的字符串发给 Agent，运行：`agent-reach configure xhs-cookies "导出的cookie字符串"`
+> 1. Install [Cookie-Editor](https://chromewebstore.google.com/detail/cookie-editor/hlkenndednhfkekhgcdicdfddnkalmdm) extension in Chrome
+> 2. Log into xiaohongshu.com in the browser
+> 3. Click Cookie-Editor icon → Export → Header String
+> 4. Send the exported string to the agent, run: `agent-reach configure xhs-cookies "exported_cookie_string"`
 >
-> **注意**：不要依赖 QR 扫码登录，Cookie-Editor 导出方式最简单可靠。
+> **Note**: Do not rely on QR code login; Cookie-Editor export is the simplest and most reliable method.
 
-## 使用示例
+## Usage examples
 
-搜索笔记：
+Search notes:
 ```bash
-xhs search "关键词"
+xhs search "keyword"
 ```
 
-阅读笔记详情：
+Read note details:
 ```bash
 xhs read NOTE_ID
 ```
 
-查看评论：
+View comments:
 ```bash
 xhs comments NOTE_ID
 ```
 
-## 常见问题
+## FAQ
 
-**Q: Cookie 过期了？**
-A: 重新运行 `xhs login` 或通过 Cookie-Editor 重新导出。
+**Q: Cookie expired?**
+A: Re-run `xhs login` or re-export via Cookie-Editor.
 
-**Q: 小红书提示 IP 风险？**
-A: 推荐使用住宅代理：`export HTTP_PROXY="http://user:pass@ip:port"`。
+**Q: XiaoHongShu showing IP risk warning?**
+A: Use a residential proxy: `export HTTP_PROXY="http://user:pass@ip:port"`.
 
-**Q: xhs-cli 不支持我的系统？**
-A: 确保 Python 3.10+ 和 pipx 已安装。运行 `pipx install xiaohongshu-cli` 即可。
+**Q: xhs-cli doesn't support my system?**
+A: Ensure Python 3.10+ and pipx are installed. Run `pipx install xiaohongshu-cli`.
 
-## 备选方案：Docker MCP
+## Alternative: Docker MCP
 
-如果你已经在使用 [xiaohongshu-mcp](https://github.com/xpzouying/xiaohongshu-mcp) Docker 方案，它也能正常工作：
+If you are already using the [xiaohongshu-mcp](https://github.com/xpzouying/xiaohongshu-mcp) Docker setup, it also works:
 
 ```bash
 docker run -d \
@@ -82,4 +82,4 @@ docker run -d \
 mcporter config add xiaohongshu http://localhost:18060/mcp
 ```
 
-xhs-cli 是当前推荐方案，不需要 Docker，安装更简单。
+xhs-cli is the current recommended solution — no Docker needed, simpler installation.

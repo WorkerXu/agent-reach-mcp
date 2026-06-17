@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Xueqiu (雪球) — stock quotes, search, trending posts & hot stocks."""
+"""Xueqiu — stock quotes, search, trending posts & hot stocks."""
 
 import http.cookiejar
 import json
@@ -145,8 +145,8 @@ def _strip_html(text: str) -> str:
 
 class XueqiuChannel(Channel):
     name = "xueqiu"
-    description = "雪球股票行情与社区动态"
-    backends = ["Xueqiu API (需要登录 Cookie)"]
+    description = "Xueqiu stock quotes and community trends"
+    backends = ["Xueqiu API (login Cookie required)"]
     tier = 1
 
     # ------------------------------------------------------------------ #
@@ -170,12 +170,12 @@ class XueqiuChannel(Channel):
             items = (data.get("data") or {}).get("items") or []
             if items:
                 self.active_backend = self.backends[0]
-                return "ok", "公开 API 可用（行情、搜索、热帖、热股）"
-            return "warn", "API 响应异常（返回数据为空）"
+                return "ok", "Public API available (quotes, search, hot posts, hot stocks)"
+            return "warn", "API response abnormal (returned data is empty)"
         except Exception as e:
             return "warn", (
-                f"Xueqiu API 连接失败：{e}。"
-                "请先登录雪球后运行：agent-reach configure --from-browser chrome"
+                f"Xueqiu API connection failed: {e}. "
+                "Please log into Xueqiu first, then run: agent-reach configure --from-browser chrome"
             )
 
     # ------------------------------------------------------------------ #
@@ -183,44 +183,133 @@ class XueqiuChannel(Channel):
     # ------------------------------------------------------------------ #
 
     def get_stock_quote(self, symbol: str) -> dict:
-        """获取实时股票行情。
+        """Get real-time stock quotes.
+
+        Tries Xueqiu API first (requires cookies), falls back to Yahoo Finance v8 API.
 
         Args:
-            symbol: 股票代码，如 SH600519（沪）、SZ000858（深）、AAPL（美）、00700（港）
+            symbol: Stock symbol, e.g. SH600519 (Shanghai), SZ000858 (Shenzhen), AAPL (US), 00700 (Hong Kong)
 
         Returns a dict with keys:
           symbol, name, current, percent, chg, high, low, open, last_close,
           volume, amount, market_capital, turnover_rate, pe_ttm, timestamp
         """
-        data = _get_json(
-            f"https://stock.xueqiu.com/v5/stock/batch/quote.json?symbol={symbol}"
+        try:
+            data = _get_json(
+                f"https://stock.xueqiu.com/v5/stock/batch/quote.json?symbol={symbol}"
+            )
+            items = (data.get("data") or {}).get("items") or []
+            if items:
+                q = (items[0].get("quote") or {}) if items else {}
+                return {
+                    "symbol": q.get("symbol", symbol),
+                    "name": q.get("name", ""),
+                    "current": q.get("current"),
+                    "percent": q.get("percent"),
+                    "chg": q.get("chg"),
+                    "high": q.get("high"),
+                    "low": q.get("low"),
+                    "open": q.get("open"),
+                    "last_close": q.get("last_close"),
+                    "volume": q.get("volume"),
+                    "amount": q.get("amount"),
+                    "market_capital": q.get("market_capital"),
+                    "turnover_rate": q.get("turnover_rate"),
+                    "pe_ttm": q.get("pe_ttm"),
+                    "timestamp": q.get("timestamp"),
+                }
+        except Exception:
+            pass
+        # Fallback: Yahoo Finance v8 API (no auth needed, works from server IPs)
+        return self._get_stock_quote_yahoo(symbol)
+
+    @staticmethod
+    def _get_stock_quote_yahoo(symbol: str) -> dict:
+        """Fallback stock quote via Yahoo Finance (yfinance or v8 chart API).
+
+        Tries yfinance first (richer data), falls back to v8 chart API.
+        """
+        import json
+        import urllib.request
+        _UA = (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/120.0.0.0 Safari/537.36"
         )
-        items = (data.get("data") or {}).get("items") or []
-        q = (items[0].get("quote") or {}) if items else {}
-        return {
-            "symbol": q.get("symbol", symbol),
-            "name": q.get("name", ""),
-            "current": q.get("current"),
-            "percent": q.get("percent"),
-            "chg": q.get("chg"),
-            "high": q.get("high"),
-            "low": q.get("low"),
-            "open": q.get("open"),
-            "last_close": q.get("last_close"),
-            "volume": q.get("volume"),
-            "amount": q.get("amount"),
-            "market_capital": q.get("market_capital"),
-            "turnover_rate": q.get("turnover_rate"),
-            "pe_ttm": q.get("pe_ttm"),
-            "timestamp": q.get("timestamp"),
-        }
+        # Normalize symbol for Yahoo (remove SH/SZ prefix, convert HK)
+        yahoo_symbol = symbol
+        if symbol.startswith("SH"):
+            yahoo_symbol = symbol[2:] + ".SS"
+        elif symbol.startswith("SZ"):
+            yahoo_symbol = symbol[2:] + ".SZ"
+        elif symbol.isdigit() and len(symbol) == 5:
+            yahoo_symbol = symbol + ".HK"
+
+        # Try yfinance first (richer data)
+        try:
+            import yfinance as yf
+            ticker = yf.Ticker(yahoo_symbol)
+            info = ticker.info
+            if info and info.get("currentPrice"):
+                return {
+                    "symbol": symbol,
+                    "name": info.get("shortName") or info.get("longName", ""),
+                    "current": info.get("currentPrice") or info.get("regularMarketPrice"),
+                    "percent": info.get("regularMarketChangePercent"),
+                    "chg": info.get("regularMarketChange"),
+                    "high": info.get("dayHigh"),
+                    "low": info.get("dayLow"),
+                    "open": info.get("regularMarketOpen"),
+                    "last_close": info.get("previousClose"),
+                    "volume": info.get("volume") or info.get("regularMarketVolume"),
+                    "amount": None,
+                    "market_capital": info.get("marketCap"),
+                    "turnover_rate": None,
+                    "pe_ttm": info.get("trailingPE") or info.get("forwardPE"),
+                    "timestamp": info.get("regularMarketTime"),
+                    "_source": "yfinance",
+                }
+        except ImportError:
+            pass
+        except Exception:
+            pass
+
+        # Fallback: Yahoo Finance v8 chart API (no deps needed)
+        try:
+            req = urllib.request.Request(
+                f"https://query2.finance.yahoo.com/v8/finance/chart/{yahoo_symbol}?range=1d&interval=1d",
+                headers={"User-Agent": _UA},
+            )
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                data = json.loads(resp.read())
+                meta = data["chart"]["result"][0]["meta"]
+                return {
+                    "symbol": symbol,
+                    "name": meta.get("symbol", symbol),
+                    "current": meta.get("regularMarketPrice"),
+                    "percent": None,
+                    "chg": None,
+                    "high": None,
+                    "low": None,
+                    "open": None,
+                    "last_close": meta.get("chartPreviousClose"),
+                    "volume": None,
+                    "amount": None,
+                    "market_capital": None,
+                    "turnover_rate": None,
+                    "pe_ttm": None,
+                    "timestamp": meta.get("regularMarketTime"),
+                    "_source": "Yahoo Finance v8",
+                }
+        except Exception as e:
+            return {"symbol": symbol, "error": f"Stock quote unavailable: {e}"}
 
     def search_stock(self, query: str, limit: int = 10) -> list:
-        """搜索股票。
+        """Search stocks.
 
         Args:
-            query: 股票代码或中文名称，如 "茅台"、"600519"
-            limit: 最多返回条数
+            query: Stock symbol or Chinese name, e.g. "Moutai", "600519"
+            limit: Maximum number of results to return
 
         Returns a list of dicts with keys:
           symbol, name, exchange
@@ -242,14 +331,14 @@ class XueqiuChannel(Channel):
         return results
 
     def get_hot_posts(self, limit: int = 20) -> list:
-        """获取雪球热门帖子。
+        """Get Xueqiu hot posts.
 
         Uses the v4 public timeline endpoint which returns posts in a `list`
         array.  Each item carries a JSON-encoded `data` field containing the
         actual post payload (title, description, user, like_count, target).
 
         Args:
-            limit: 最多返回条数（上限 50）
+            limit: Maximum number of results to return (max 50)
 
         Returns a list of dicts with keys:
           id, title, text, author, likes, url
@@ -288,11 +377,11 @@ class XueqiuChannel(Channel):
         return results
 
     def get_hot_stocks(self, limit: int = 10, stock_type: int = 10) -> list:
-        """获取热门股票排行。
+        """Get hot stock rankings.
 
         Args:
-            limit:      最多返回条数（上限 50）
-            stock_type: 10=人气榜（默认），12=关注榜
+            limit:      Maximum number of results to return (max 50)
+            stock_type: 10=popularity ranking (default), 12=follow ranking
 
         Returns a list of dicts with keys:
           symbol, name, current, percent, rank

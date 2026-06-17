@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
-"""GitHub — check if gh CLI is available."""
+"""GitHub — gh CLI or GH_TOKEN env var."""
 
+import os
 from agent_reach.probe import probe_command
 
 from .base import Channel
@@ -8,8 +9,8 @@ from .base import Channel
 
 class GitHubChannel(Channel):
     name = "github"
-    description = "GitHub 仓库和代码"
-    backends = ["gh CLI"]
+    description = "GitHub repositories and code"
+    backends = ["gh CLI", "GH_TOKEN env var"]
     tier = 0
 
     def can_handle(self, url: str) -> bool:
@@ -17,26 +18,43 @@ class GitHubChannel(Channel):
         return "github.com" in urlparse(url).netloc.lower()
 
     def check(self, config=None):
-        # 真跑 gh auth status 探活。注意：未登录时 rc!=0 是正常业务态（warn），不是 error。
+        # Check for GH_TOKEN env var first (headless auth)
+        token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
+        if token:
+            # Verify token works with a lightweight API call
+            probe = probe_command(
+                "gh", ["api", "user", "--jq", ".login", "--silent"],
+                timeout=10, package="gh"
+            )
+            if probe.ok or probe.status == "timeout":
+                self.active_backend = self.backends[1]
+                return "ok", "GH_TOKEN environment variable is set (can perform read-only operations via gh)"
+            # gh not available but token is — still useful for direct API calls
+
+        # Fall back to gh auth status
         probe = probe_command("gh", ["auth", "status"], timeout=10, package="gh")
         if probe.status == "missing":
+            if token:
+                self.active_backend = self.backends[1]
+                return "ok", "GH_TOKEN is set (gh CLI not installed, can connect via API directly)"
             self.active_backend = None
-            return "warn", "gh CLI 未安装。安装：https://cli.github.com"
+            return "warn", "gh CLI not installed. Install: https://cli.github.com"
         if probe.status == "broken":
-            # gh 是二进制安装（brew/官方包），不是 pip 包——处方不用 pipx/uv 文案
             self.active_backend = None
             return "error", (
-                "gh 命令存在但无法执行——安装已损坏。重装即可修复：\n"
+                "gh command exists but cannot execute — installation is corrupted. Reinstall to fix:\n"
                 "  brew reinstall gh\n"
-                "或从 https://cli.github.com 重新安装 gh CLI"
+                "or reinstall gh CLI from https://cli.github.com"
             )
         if probe.status == "timeout":
-            # gh 本体能启动（工具是活的），只是状态检查超时
             self.active_backend = "gh CLI"
-            return "warn", "gh CLI 状态检查超时，运行 gh auth status 查看详情"
+            return "warn", "gh CLI status check timed out, run gh auth status for details"
         if probe.ok:
             self.active_backend = "gh CLI"
-            return "ok", "完整可用（读取、搜索、Fork、Issue、PR 等）"
-        # rc != 0：gh 活着但未认证（gh auth status 的正常业务态）
+            return "ok", "Fully available (read, search, Fork, Issue, PR, etc.)"
+        # rc != 0: gh is alive but not authenticated
+        if token:
+            self.active_backend = self.backends[1]
+            return "ok", "gh CLI not logged in, but GH_TOKEN environment variable is set"
         self.active_backend = "gh CLI"
-        return "warn", "gh CLI 已安装但未认证。运行 gh auth login 可解锁完整功能"
+        return "warn", "gh CLI is installed but not authenticated. Run gh auth login to unlock full features"

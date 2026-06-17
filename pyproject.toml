@@ -1,11 +1,11 @@
 [project]
-name = "agent-reach"
-version = "1.5.0"
-description = "Give your AI Agent eyes to see the entire internet. Search + Read 10+ platforms."
+name = "agent-reach-mcp"
+version = "1.5.1"
+description = "MCP-optimized fork of Agent Reach — AI agent internet access for 13+ platforms"
 readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.10"
-authors = [{name = "Neo Reid"}]
+authors = [{name = "M0-AR"}]
 keywords = [
     "ai-agent", "llm-tools", "agent-infrastructure", "mcp",
     "web-reader", "web-scraper", "search",
@@ -35,27 +35,39 @@ dependencies = [
     "pyyaml>=6.0",
     "rich>=13.0",
     "yt-dlp>=2024.0",
+    "mcp[cli]>=1.5.0",
 ]
 
 [project.optional-dependencies]
 browser = ["playwright>=1.40"]
 cookies = ["browser-cookie3>=0.19"]
-all = ["playwright>=1.40", "mcp[cli]>=1.0", "browser-cookie3>=0.19"]
+all = [
+    "playwright>=1.40",
+    "mcp[cli]>=1.0",
+    "browser-cookie3>=0.19",
+    "yfinance>=1.4.1",
+]
 dev = [
     "pytest>=8.0",
+    "pytest-asyncio>=0.24",
     "ruff>=0.8",
     "mypy>=1.12",
     "types-requests>=2.32",
     "types-PyYAML>=6.0",
 ]
 
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
 [project.scripts]
 agent-reach = "agent_reach.cli:main"
+agent-reach-mcp = "agent_reach.integrations.mcp_server:main"
 
 [project.urls]
-Homepage = "https://github.com/Panniantong/agent-reach"
-Repository = "https://github.com/Panniantong/agent-reach"
-Issues = "https://github.com/Panniantong/agent-reach/issues"
+Homepage = "https://github.com/M0-AR/agent-reach-mcp"
+Repository = "https://github.com/M0-AR/agent-reach-mcp"
+Issues = "https://github.com/M0-AR/agent-reach-mcp/issues"
 
 [build-system]
 requires = ["hatchling"]

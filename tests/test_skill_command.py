@@ -115,7 +115,7 @@ class TestSkillCommand(unittest.TestCase):
                 content = f.read()
             self.assertTrue(content.strip())
             self.assertIn("Xiaoyuzhou Podcast, LinkedIn", content)
-            self.assertNotIn("搜推特", content)
+            self.assertNotIn("Search Twitter", content)
             self.assertTrue(
                 os.path.exists(os.path.join(skill_parent, "agent-reach", "references"))
             )

@@ -6,6 +6,34 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## [1.5.1] — 2026-06-17 — Fork: agent-reach-mcp
+
+**Fork of Panniantong/Agent-Reach v1.5.0.** See README.md — Origin for details.
+
+### 🆕 MCP Server Improvements
+
+- **Web search fixed**: Replaced broken DuckDuckGo 403 with Exa via mcporter (already installed + configured on this server)
+- **Stock quote fixed**: Added yfinance fallback with Yahoo Finance v8 chart API as second fallback. US stocks (AAPL, TSLA, etc.) work without any cookies. Returns rich data: name, price, market cap, PE ratio.
+- **V2EX doctor honesty**: `check()` now actually probes web scraping before declaring "ok". Returns "warn" when V2EX blocks this server IP.
+- **V2EX error messages**: All errors now suggest `search(platform='web', query='site:v2ex.com ...')` as alternative.
+- **V2EX read_url**: Falls back to web channel when V2EX is unreachable, returns actionable message instead of raw error.
+- **yfinance added** as optional dep (`pip install agent-reach-mcp[all]`)
+
+### 🧪 Testing
+
+- 70 in-memory FastMCP tests added (schema contracts, mocked execution, parameterized edge cases, `_run_cli` unit tests)
+- V2EX test fixed to match new honest `check()` behavior
+- 232/232 tests passing
+
+### 🔧 Maintenance
+
+- All 16 raw `subprocess.run` calls replaced with `_run_cli()` helper
+- All tool descriptions rewritten per MCP best practices (verb-first, return format, negative instructions)
+- FastMCP in-memory `Client(server)` fixture for all MCP tests
+- Ruff clean on all modified files
+
+---
+
 ## [1.3.1] - 2026-03-27
 
 ### 🐛 Bug Fixes / 修复

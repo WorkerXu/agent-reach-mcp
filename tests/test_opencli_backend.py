@@ -29,7 +29,7 @@ def test_not_installed():
     st, _ = _status_with(ProbeResult("missing"))
     assert not st.installed
     assert not st.ready
-    assert "未安装" in opencli_summary(st)
+    assert "not installed" in opencli_summary(st)
 
 
 def test_broken_node_env_gives_npm_hint():
@@ -63,8 +63,8 @@ def test_extension_never_installed_not_ready_with_store_guide():
 
 
 def test_sleeping_extension_counts_as_ready():
-    """实测:扩展 service worker 睡眠时 daemon status 报 disconnected,
-    但任何真实命令会唤醒它——装在磁盘上即视为可用。"""
+    """In practice: when extension service worker sleeps, daemon status reports disconnected,
+    but any real command will wake it — installed on disk means available."""
     daemon_out = "Daemon: running (PID 1)\nExtension: disconnected\n"
     st, _ = _status_with(
         ProbeResult("ok", output="1.8.3"),
@@ -74,7 +74,7 @@ def test_sleeping_extension_counts_as_ready():
     assert not st.extension_connected
     assert st.extension_installed
     assert st.ready
-    assert "唤醒" in opencli_summary(st)
+    assert "wake" in opencli_summary(st)
     assert st.hint == ""
 
 
@@ -86,7 +86,7 @@ def test_daemon_not_running_parsed_correctly():
     assert st.installed
     assert not st.daemon_running
     assert not st.extension_connected
-    assert "自动启动" in opencli_summary(st)
+    assert "auto-start" in opencli_summary(st)
 
 
 def test_probe_uses_daemon_status_not_doctor():
