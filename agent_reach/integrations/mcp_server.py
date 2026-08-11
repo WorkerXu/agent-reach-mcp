@@ -1,10 +1,9 @@
 # -*- coding: utf-8 -*-
 """
-Agent Reach MCP Server — expose 13 internet platforms as MCP tools.
+Agent Reach MCP Server — expose an approved subset of internet platforms as MCP tools.
 
-Provides 8 task-shaped tools covering all platforms:
-  doctor, read_url, search, trending, stock_quote,
-  get_details, transcribe, install
+Provides 7 task-shaped tools:
+  doctor, read_url, search, trending, get_details, transcribe, install
 
 Run: python -m agent_reach.integrations.mcp_server
      agent-reach mcp
@@ -39,6 +38,34 @@ except ImportError:
 # ------------------------------------------------------------------ #
 MAX_LIMIT = 50
 DEFAULT_LIMIT = 10
+
+# This deployment excludes these platforms from every MCP entry point.
+EXCLUDED_MCP_PLATFORMS = frozenset({
+    "xueqiu",
+    "xiaoyuzhou",
+    "linkedin",
+    "xiaohongshu",
+    "twitter",
+})
+EXCLUDED_MCP_DOMAINS = frozenset({
+    "xueqiu.com",
+    "xiaoyuzhoufm.com",
+    "linkedin.com",
+    "xiaohongshu.com",
+    "xhslink.com",
+    "x.com",
+    "twitter.com",
+    "t.co",
+})
+
+
+def _is_excluded_domain(domain: str) -> bool:
+    hostname = domain.lower().split(":", 1)[0].rstrip(".")
+    return any(hostname == blocked or hostname.endswith(f".{blocked}") for blocked in EXCLUDED_MCP_DOMAINS)
+
+
+def _excluded_url_message(domain: str) -> str:
+    return f"Unsupported URL domain in this deployment: {domain}."
 
 
 # ------------------------------------------------------------------ #
@@ -128,8 +155,15 @@ def create_server() -> FastMCP:
     config = Config()
     eyes = AgentReach(config)
 
+    def _doctor_results() -> Dict[str, Any]:
+        return {
+            name: result
+            for name, result in eyes.doctor().items()
+            if name.lower() not in EXCLUDED_MCP_PLATFORMS
+        }
+
     def _platforms_summary() -> str:
-        results = eyes.doctor()
+        results = _doctor_results()
         ok = sum(1 for r in results.values() if r["status"] == "ok")
         total = len(results)
         return f"{ok}/{total} platforms available"
@@ -141,7 +175,7 @@ def create_server() -> FastMCP:
         name="doctor",
         description="""Check which internet platforms are installed, authenticated, and ready to use.
 
-Scans all 13 supported platforms and returns a structured health report. Each entry
+Scans the platforms exposed by this MCP deployment and returns a structured health report. Each entry
 shows status ('ok'|'warn'|'off'|'error'), which backend is active, and actionable
 next steps if a platform is unavailable.
 
@@ -158,7 +192,7 @@ Returns JSON dict keyed by platform name, each value contains:
 """,
     )
     def doctor() -> str:
-        results = eyes.doctor()
+        results = _doctor_results()
         return json.dumps(results, ensure_ascii=False, indent=2)
 
     # ------------------------------------------------------------------ #
@@ -195,6 +229,9 @@ Returns: Clean markdown-formatted content text (stripped of ads, navigation, cru
 
         parsed = urlparse(url)
         domain = parsed.netloc.lower()
+
+        if _is_excluded_domain(domain):
+            return _excluded_url_message(domain)
 
         # V2EX routing — fallback to web channel if V2EX API/scraping is unreachable
         if "v2ex.com" in domain:
@@ -262,27 +299,24 @@ Returns: Clean markdown-formatted content text (stripped of ads, navigation, cru
         name="search",
         description="""Search for content across supported internet platforms by keyword.
 
-Supported platforms (7):
+Supported platforms (5):
   - "web": General web search via DuckDuckGo → Jina Reader
   - "v2ex": Chinese tech forum topics
-  - "xueqiu": Chinese/A-share stocks by name or symbol
   - "github": Repositories, code, and issues (requires gh CLI + auth)
-  - "twitter": Tweets by keyword (requires twitter-cli + auth cookies)
   - "reddit": Posts and comments (requires rdt-cli + auth cookies)
   - "bilibili": Videos (requires bili-cli)
 
 When to use:
 - Finding web pages about a topic (platform="web")
-- Discovering Chinese stock information (platform="xueqiu")
 - Searching tech discussions (platform="v2ex")
 - Finding GitHub repos (platform="github")
-- Looking up social media content (twitter, reddit, bilibili)
+- Looking up discussions and videos (reddit, bilibili)
 
 Negative: Does NOT read full content of a URL — use read_url() for that.
 Does NOT get detailed info by ID — use get_details() for that.
 
 query: Search keywords (2-100 chars)
-platform: Target platform (web, v2ex, xueqiu, github, twitter, reddit, bilibili)
+platform: Target platform (web, v2ex, github, reddit, bilibili)
 limit: Max results, clamped to 1-50 (default 10)
 
 Returns JSON: {"results": [...], "platform": str, "query": str}
@@ -307,18 +341,6 @@ Returns JSON: {"results": [...], "platform": str, "query": str}
             results = V2EXChannel().search(query, limit=limit)
             return json.dumps({"results": results, "platform": "v2ex", "query": query}, ensure_ascii=False)
 
-        if platform == "xueqiu":
-            try:
-                ch = _get_channel("xueqiu")
-                if ch and hasattr(ch, "search_stock"):
-                    results = ch.search_stock(query, limit=limit)
-                else:
-                    from agent_reach.channels.xueqiu import XueqiuChannel
-                    results = XueqiuChannel().search_stock(query, limit=limit)
-            except Exception as e:
-                results = [{"error": f"Xueqiu search failed: {e}.\nThis may require login cookies. Run `agent-reach configure --from-browser chrome` if logged into Xueqiu."}]
-            return json.dumps({"results": results, "platform": "xueqiu", "query": query}, ensure_ascii=False)
-
         if platform == "github":
             result = _run_cli("gh", ["search", query, "--limit", str(limit), "--json", "url,title"], timeout=15)
             if result.success:
@@ -326,14 +348,6 @@ Returns JSON: {"results": [...], "platform": str, "query": str}
             else:
                 results = [{"error": result.error}]
             return json.dumps({"results": results, "platform": "github", "query": query}, ensure_ascii=False)
-
-        if platform == "twitter":
-            result = _run_cli("twitter", ["search", query, "--limit", str(limit), "-f", "json"], timeout=20)
-            if result.success:
-                results = json.loads(result.stdout) if result.stdout.strip() else []
-            else:
-                results = [{"error": result.error}]
-            return json.dumps({"results": results, "platform": "twitter", "query": query}, ensure_ascii=False)
 
         if platform == "reddit":
             result = _run_cli("rdt", ["search", query, "--limit", str(limit), "-f", "json"], timeout=20)
@@ -351,7 +365,7 @@ Returns JSON: {"results": [...], "platform": str, "query": str}
                 results = [{"error": result.error or "bili-cli not installed or not configured. Install: uv tool install bilibili-cli"}]
             return json.dumps({"results": results, "platform": "bilibili", "query": query}, ensure_ascii=False)
 
-        return json.dumps({"error": f"Unknown search platform: {platform}. Supported: web, v2ex, xueqiu, github, twitter, reddit, bilibili", "platform": platform, "query": query})
+        return json.dumps({"error": f"Unknown search platform: {platform}. Supported: web, v2ex, github, reddit, bilibili", "platform": platform, "query": query})
 
     # ------------------------------------------------------------------ #
     # Tool 4: trending
@@ -360,25 +374,21 @@ Returns JSON: {"results": [...], "platform": str, "query": str}
         name="trending",
         description="""Get hot, trending, or popular content from supported internet platforms.
 
-Supported platforms (7):
+Supported platforms (4):
   - "v2ex": Hot topics on Chinese tech forum V2EX (no auth needed)
-  - "xueqiu_stocks": Hot stock rankings from Xueqiu (needs browser cookies)
-  - "xueqiu_posts": Hot/popular posts on Xueqiu (needs browser cookies)
   - "bilibili": Trending videos (requires bili-cli)
   - "reddit": Hot posts across Reddit (requires rdt-cli + auth)
   - "github": Trending repos sorted by stars (requires gh CLI)
-  - "twitter": Current trending topics (requires twitter-cli + auth)
 
 When to use:
 - Finding what's popular right now on a platform
 - Discovering trending tech discussions (v2ex)
-- Checking hot stocks (xueqiu_stocks)
 - Browsing popular videos (bilibili)
 
 Negative: Does NOT read full content — use read_url() for that.
 Does NOT search by keyword — use search() for that.
 
-platform: Target platform (v2ex, xueqiu_stocks, xueqiu_posts, bilibili, reddit, github, twitter)
+platform: Target platform (v2ex, bilibili, reddit, github)
 limit: Max results, clamped to 1-50 (default 10)
 
 Returns JSON: {"results": [...], "platform": str}
@@ -391,30 +401,6 @@ Returns JSON: {"results": [...], "platform": str}
         if platform == "v2ex":
             from agent_reach.channels.v2ex import V2EXChannel
             results = V2EXChannel().get_hot_topics(limit=limit)
-            return json.dumps({"results": results, "platform": platform}, ensure_ascii=False)
-
-        if platform == "xueqiu_stocks":
-            try:
-                ch = _get_channel("xueqiu")
-                if ch and hasattr(ch, "get_hot_stocks"):
-                    results = ch.get_hot_stocks(limit=limit)
-                else:
-                    from agent_reach.channels.xueqiu import XueqiuChannel
-                    results = XueqiuChannel().get_hot_stocks(limit=limit)
-            except Exception as e:
-                return json.dumps({"results": [{"error": f"Xueqiu API error: {e}"}], "platform": platform})
-            return json.dumps({"results": results, "platform": platform}, ensure_ascii=False)
-
-        if platform == "xueqiu_posts":
-            try:
-                ch = _get_channel("xueqiu")
-                if ch and hasattr(ch, "get_hot_posts"):
-                    results = ch.get_hot_posts(limit=limit)
-                else:
-                    from agent_reach.channels.xueqiu import XueqiuChannel
-                    results = XueqiuChannel().get_hot_posts(limit=limit)
-            except Exception as e:
-                return json.dumps({"results": [{"error": f"Xueqiu API error: {e}"}], "platform": platform})
             return json.dumps({"results": results, "platform": platform}, ensure_ascii=False)
 
         if platform == "bilibili":
@@ -445,78 +431,19 @@ Returns JSON: {"results": [...], "platform": str}
                 results = [{"error": result.error}]
             return json.dumps({"results": results, "platform": platform}, ensure_ascii=False)
 
-        if platform == "twitter":
-            result = _run_cli("twitter", ["trends", "-f", "json"], timeout=20)
-            if result.success:
-                results = json.loads(result.stdout) if result.stdout.strip() else []
-            else:
-                results = [{"error": result.error}]
-            return json.dumps({"results": results, "platform": platform}, ensure_ascii=False)
-
-        return json.dumps({"error": f"Unknown trending platform: {platform}. Supported: v2ex, xueqiu_stocks, xueqiu_posts, bilibili, reddit, github, twitter"})
+        return json.dumps({"error": f"Unknown trending platform: {platform}. Supported: v2ex, bilibili, reddit, github"})
 
     # ------------------------------------------------------------------ #
-    # Tool 5: stock_quote
-    # ------------------------------------------------------------------ #
-    @mcp.tool(
-        name="stock_quote",
-        description="""Get real-time stock quote and market data.
-
-Primary: Xueqiu API (Chinese stock platform, needs browser cookies for some data).
-Fallback: Yahoo Finance v8 API (no auth needed, works from server IPs).
-
-Supports global stock symbols:
-  - US stocks: AAPL, TSLA, MSFT, NVDA, AMD
-  - Shanghai A-shares: SH600519 (Moutai), SH600036 (CMB) — Xueqiu only
-  - Shenzhen: SZ000858 (Wuliangye), SZ300750 (CATL) — Xueqiu only
-  - Hong Kong: 00700 (Tencent), 09988 (Alibaba) — Xueqiu only
-  - Index: SH000001 (Shanghai Composite)
-
-When to use:
-- Checking current stock price (US stocks work without setup)
-- Chinese A-share, US, or Hong Kong stock data
-- When you need quick quote without navigating to a finance site
-
-Negative: Does NOT provide historical data or charts.
-Does NOT support options, futures, or crypto.
-Chinese A-share detailed data requires Xueqiu login cookies.
-
-symbol: Stock symbol (e.g. AAPL, SH600519, 00700). Auto-detects exchange.
-
-Returns JSON: {"symbol": str, "quote": {"current": float, ...}}
-""",
-    )
-    def stock_quote(symbol: str) -> str:
-        symbol = symbol.strip().upper()
-        try:
-            ch = _get_channel("xueqiu")
-            if ch and hasattr(ch, "get_stock_quote"):
-                result = ch.get_stock_quote(symbol)
-            else:
-                from agent_reach.channels.xueqiu import XueqiuChannel
-                result = XueqiuChannel().get_stock_quote(symbol)
-            return json.dumps({"symbol": symbol, "quote": result}, ensure_ascii=False)
-        except Exception as e:
-            # Last-resort fallback: Yahoo Finance directly
-            from agent_reach.channels.xueqiu import XueqiuChannel
-            try:
-                result = XueqiuChannel._get_stock_quote_yahoo(symbol)
-                return json.dumps({"symbol": symbol, "quote": result}, ensure_ascii=False)
-            except Exception:
-                return json.dumps({"symbol": symbol, "error": str(e), "note": "Install yfinance for richer stock data: pip install yfinance"})
-
-    # ------------------------------------------------------------------ #
-    # Tool 6: get_details
+    # Tool 5: get_details
     # ------------------------------------------------------------------ #
     @mcp.tool(
         name="get_details",
         description="""Get detailed information from a platform by ID, name, or URL.
 
-Supported platforms (6):
+Supported platforms (5):
   - "v2ex_topic": Full V2EX topic with all replies. id: topic number (e.g. 100)
   - "v2ex_user": V2EX user profile. id: username (e.g. Livid)
   - "v2ex_node": Topics in a V2EX node. id: node name (e.g. python, go, apple)
-  - "xueqiu_search": Search Xueqiu stocks. id: stock name or symbol (e.g. 茅台, AAPL)
   - "bilibili_video": Bilibili video details. id: BV number or URL (e.g. BV1GJ411x7h)
   - "github_repo": GitHub repo details. id: owner/repo (e.g. cli/cli)
 
@@ -529,8 +456,8 @@ When to use:
 Negative: Does NOT search by keyword — use search() for that.
 Does NOT fetch GitHub code or issues — use read_url() for deeper content.
 
-platform: v2ex_topic, v2ex_user, v2ex_node, xueqiu_search, bilibili_video, github_repo
-id: Platform-specific identifier (topic number, username, node name, stock symbol, BV number, owner/repo)
+platform: v2ex_topic, v2ex_user, v2ex_node, bilibili_video, github_repo
+id: Platform-specific identifier (topic number, username, node name, BV number, owner/repo)
 limit: Max results for list queries, clamped to 1-50 (default 20, used by v2ex_node)
 
 Returns: Platform-specific JSON detail
@@ -565,18 +492,6 @@ Returns: Platform-specific JSON detail
                 return json.dumps({"error": f"V2EX node lookup failed: {e}"})
             return json.dumps(results, ensure_ascii=False)
 
-        if platform == "xueqiu_search":
-            try:
-                ch = _get_channel("xueqiu")
-                if ch and hasattr(ch, "search_stock"):
-                    results = ch.search_stock(id, limit=limit)
-                else:
-                    from agent_reach.channels.xueqiu import XueqiuChannel
-                    results = XueqiuChannel().search_stock(id, limit=limit)
-            except Exception as e:
-                return json.dumps({"error": f"Xueqiu search failed: {e}. Try configuring cookies with `agent-reach configure --from-browser chrome`"})
-            return json.dumps(results, ensure_ascii=False)
-
         if platform == "bilibili_video":
             result = _run_cli("bili", ["video", id, "--json"], timeout=20)
             if result.success:
@@ -594,10 +509,10 @@ Returns: Platform-specific JSON detail
                 return json.dumps(data, ensure_ascii=False)
             return json.dumps({"error": result.error})
 
-        return json.dumps({"error": f"Unknown detail platform: {platform}. Supported: v2ex_topic, v2ex_user, v2ex_node, xueqiu_search, bilibili_video, github_repo"})
+        return json.dumps({"error": f"Unknown detail platform: {platform}. Supported: v2ex_topic, v2ex_user, v2ex_node, bilibili_video, github_repo"})
 
     # ------------------------------------------------------------------ #
-    # Tool 7: transcribe
+    # Tool 6: transcribe
     # ------------------------------------------------------------------ #
     @mcp.tool(
         name="transcribe",
@@ -621,6 +536,8 @@ Returns: Full transcript text
 """,
     )
     def transcribe(url: str, provider: str = "auto") -> str:
+        if _is_excluded_domain(urlparse(url).netloc.lower()):
+            return _excluded_url_message(urlparse(url).netloc.lower())
         from agent_reach.transcribe import transcribe as _transcribe
 
         try:
@@ -630,7 +547,7 @@ Returns: Full transcript text
             return f"Transcription failed: {e}"
 
     # ------------------------------------------------------------------ #
-    # Tool 8: install
+    # Tool 7: install
     # ------------------------------------------------------------------ #
     @mcp.tool(
         name="install",
@@ -638,9 +555,6 @@ Returns: Full transcript text
 
 Available platforms:
   - "system": Install system deps (gh CLI, Node.js, yt-dlp JS runtime)
-  - "twitter": Install twitter-cli for Twitter/X search and timeline
-  - "xiaoyuzhou": Set up Xiaoyuzhou podcast transcription (requires ffmpeg + Groq key)
-  - "xiaohongshu": Set up XiaoHongShu access
   - "reddit": Install rdt-cli or OpenCLI for Reddit
   - "bilibili": Install bili-cli for Bilibili search/hot
   - "opencli": Install OpenCLI (cross-platform browser session backend)
@@ -657,7 +571,7 @@ Use this when:
 - You need transcription capability
 - You're setting up Agent Reach for the first time
 
-platform: system, twitter, xiaoyuzhou, xiaohongshu, reddit, bilibili, opencli, mcporter, all,
+platform: system, reddit, bilibili, opencli, mcporter, all,
          groq-key, openai-key, github-token
 value: Optional value for configuration keys (e.g. API key)
 
@@ -701,9 +615,6 @@ Returns: Installation progress and status
 
         # Platform installs
         INSTALL_MAP = {
-            "twitter": "_install_twitter_deps",
-            "xiaoyuzhou": "_install_xiaoyuzhou_deps",
-            "xiaohongshu": "_install_xhs_deps",
             "reddit": "_install_reddit_deps",
             "bilibili": "_install_bili_deps",
             "opencli": "_install_opencli_deps",
@@ -732,7 +643,7 @@ Returns: Installation progress and status
             old_stdout = sys.stdout
             sys.stdout = buf = io.StringIO()
             try:
-                for ch_name in ["twitter", "xiaoyuzhou", "xiaohongshu", "reddit", "bilibili", "opencli", "mcporter"]:
+                for ch_name in ["reddit", "bilibili", "opencli", "mcporter"]:
                     func_name = f"_install_{ch_name}_deps" if ch_name != "mcporter" else "_install_mcporter"
                     func = getattr(sys.modules.get("agent_reach.cli"), func_name, None)
                     if func:
@@ -741,7 +652,7 @@ Returns: Installation progress and status
                 sys.stdout = old_stdout
             return buf.getvalue()
 
-        return f"Unknown platform: {platform}. Supported: system, twitter, xiaoyuzhou, xiaohongshu, reddit, bilibili, opencli, mcporter, all, groq-key, openai-key, github-token"
+        return f"Unknown platform: {platform}. Supported: system, reddit, bilibili, opencli, mcporter, all, groq-key, openai-key, github-token"
 
     return mcp
 

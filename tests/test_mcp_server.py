@@ -1,7 +1,7 @@
 """Tests for Agent Reach MCP server tools — in-memory FastMCP client pattern.
 
 Test strategy (per FastMCP best-practices research):
-1. Schema contract tests — verify all 8 tools registered with correct descriptions and input schemas
+1. Schema contract tests — verify all 7 tools registered with correct descriptions and input schemas
 2. Mocked execution tests — mock _run_cli for deterministic CLI testing
 3. Real integration tests — test platforms that work without auth (V2EX, Web, RSS)
 4. Parameterized edge cases — empty strings, extreme values, invalid inputs
@@ -46,7 +46,7 @@ def mcp():
 class TestToolContracts:
     """Verify tool registration, descriptions, and input schemas."""
 
-    TOOL_NAMES = {"doctor", "read_url", "search", "trending", "stock_quote", "get_details", "transcribe", "install"}
+    TOOL_NAMES = {"doctor", "read_url", "search", "trending", "get_details", "transcribe", "install"}
 
     @pytest.mark.asyncio
     async def test_all_tools_registered(self, mcp):
@@ -109,14 +109,6 @@ class TestToolContracts:
         assert props["limit"]["default"] == 10
 
     @pytest.mark.asyncio
-    async def test_stock_quote_schema(self, mcp):
-        tools = await mcp.list_tools()
-        tool = {t.name: t for t in tools}["stock_quote"]
-        props = tool.inputSchema["properties"]
-        assert "symbol" in props
-        assert props["symbol"]["type"] == "string"
-
-    @pytest.mark.asyncio
     async def test_get_details_schema(self, mcp):
         tools = await mcp.list_tools()
         tool = {t.name: t for t in tools}["get_details"]
@@ -177,6 +169,7 @@ class TestDoctor:
         assert isinstance(data, dict)
         assert len(data) > 0
         for platform, info in data.items():
+            assert platform not in {"xueqiu", "xiaoyuzhou", "linkedin", "xiaohongshu", "twitter"}
             assert "status" in info, f"{platform} missing status"
             assert info["status"] in ("ok", "warn", "off", "error"), (
                 f"{platform} bad status: {info['status']}"
@@ -236,6 +229,18 @@ class TestReadUrl:
         assert len(text) > 0
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize("url", [
+        "https://xueqiu.com/123",
+        "https://www.xiaoyuzhoufm.com/episode/123",
+        "https://www.linkedin.com/in/example",
+        "https://www.xiaohongshu.com/explore/123",
+        "https://x.com/example",
+    ])
+    async def test_read_url_rejects_excluded_platform_domains(self, mcp, url):
+        content, metadata = await mcp.call_tool("read_url", {"url": url})
+        assert "Unsupported URL domain" in content[0].text
+
+    @pytest.mark.asyncio
     async def test_read_url_bilibili_fallback_on_failure(self, mcp):
         """When bili-cli fails, should fall back to web channel."""
         with patch("agent_reach.integrations.mcp_server._run_cli", return_value=CliResult(success=False, error="not found")):
@@ -287,12 +292,11 @@ class TestSearch:
             assert data["platform"] == "github"
 
     @pytest.mark.asyncio
-    async def test_search_twitter_uses_cli(self, mcp):
-        """Twitter search should call twitter-cli."""
-        with patch("agent_reach.integrations.mcp_server._run_cli", return_value=CliResult(success=True, stdout="[]")):
-            content, metadata = await mcp.call_tool("search", {"platform": "twitter", "query": "test", "limit": 3})
-            data = json.loads(content[0].text)
-            assert data["platform"] == "twitter"
+    @pytest.mark.parametrize("platform", ["xueqiu", "twitter", "linkedin", "xiaohongshu", "xiaoyuzhou"])
+    async def test_search_excluded_platform_returns_error(self, mcp, platform):
+        content, metadata = await mcp.call_tool("search", {"platform": platform, "query": "test", "limit": 3})
+        data = json.loads(content[0].text)
+        assert "error" in data
 
     @pytest.mark.asyncio
     async def test_search_reddit_uses_cli(self, mcp):
@@ -348,12 +352,11 @@ class TestTrending:
             assert data["platform"] == "github"
 
     @pytest.mark.asyncio
-    async def test_trending_twitter_uses_cli(self, mcp):
-        """Twitter trending should call twitter-cli."""
-        with patch("agent_reach.integrations.mcp_server._run_cli", return_value=CliResult(success=True, stdout="[]")):
-            content, metadata = await mcp.call_tool("trending", {"platform": "twitter", "limit": 3})
-            data = json.loads(content[0].text)
-            assert data["platform"] == "twitter"
+    @pytest.mark.parametrize("platform", ["xueqiu_stocks", "xueqiu_posts", "twitter"])
+    async def test_trending_excluded_platform_returns_error(self, mcp, platform):
+        content, metadata = await mcp.call_tool("trending", {"platform": platform, "limit": 3})
+        data = json.loads(content[0].text)
+        assert "error" in data
 
     @pytest.mark.asyncio
     async def test_trending_reddit_fallback_opencli(self, mcp):
@@ -367,28 +370,6 @@ class TestTrending:
             data = json.loads(content[0].text)
             assert data["platform"] == "reddit"
             assert mock_cli.call_count == 2
-
-
-# ------------------------------------------------------------------ #
-# Stock Quote Tool Tests
-# ------------------------------------------------------------------ #
-
-class TestStockQuote:
-    @pytest.mark.asyncio
-    async def test_stock_quote_returns_symbol(self, mcp):
-        """Stock quote should always return the requested symbol."""
-        content, metadata = await mcp.call_tool("stock_quote", {"symbol": "AAPL"})
-        data = json.loads(content[0].text)
-        assert data["symbol"] == "AAPL"
-        # May be error (no cookies) or actual quote — either is valid
-        assert "quote" in data or "error" in data
-
-    @pytest.mark.asyncio
-    async def test_stock_quote_uppercases_symbol(self, mcp):
-        """Stock symbol should be uppercased."""
-        content, metadata = await mcp.call_tool("stock_quote", {"symbol": "aapl"})
-        data = json.loads(content[0].text)
-        assert data["symbol"] == "AAPL"
 
 
 # ------------------------------------------------------------------ #
@@ -527,16 +508,6 @@ class TestEdgeCases:
         content, metadata = await mcp.call_tool("search", {"platform": platform, "query": "test"})
         data = json.loads(content[0].text)
         assert "error" in data or platform.strip() == "" and "error" in data
-
-    @pytest.mark.asyncio
-    @pytest.mark.parametrize("symbol", [
-        "", "  ", "!!!invalid!!!",
-    ])
-    async def test_stock_quote_bad_symbols(self, mcp, symbol):
-        """stock_quote should handle bad symbols."""
-        content, metadata = await mcp.call_tool("stock_quote", {"symbol": symbol})
-        data = json.loads(content[0].text)
-        assert isinstance(data, dict)
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize("platform,id_str", [
