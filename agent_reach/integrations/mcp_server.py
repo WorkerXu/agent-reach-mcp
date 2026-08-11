@@ -13,6 +13,7 @@ Run: python -m agent_reach.integrations.mcp_server
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -668,6 +669,21 @@ def main():
         sys.exit(1)
 
     mcp = create_server()
+    transport = os.environ.get("AGENT_REACH_MCP_TRANSPORT", "stdio").strip().lower()
+    if transport == "streamable-http":
+        host = os.environ.get("AGENT_REACH_MCP_HOST", "127.0.0.1")
+        port = int(os.environ.get("AGENT_REACH_MCP_PORT", "18420"))
+        mcp.run(
+            transport="streamable-http",
+            host=host,
+            port=port,
+            json_response=True,
+            stateless_http=True,
+        )
+        return
+    if transport != "stdio":
+        print("AGENT_REACH_MCP_TRANSPORT must be stdio or streamable-http", file=sys.stderr)
+        sys.exit(2)
     mcp.run(transport="stdio")
 
 
