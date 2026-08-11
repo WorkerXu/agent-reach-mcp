@@ -1,0 +1,18 @@
+server {
+    listen 127.0.0.1:18420;
+    server_name _;
+    client_max_body_size 4m;
+
+    location = /mcp/__AGENT_REACH_MCP_PATH_TOKEN__ {
+        proxy_http_version 1.1;
+        proxy_set_header Host 127.0.0.1:18421;
+        proxy_set_header Connection "";
+        proxy_pass http://127.0.0.1:18421/mcp;
+        proxy_read_timeout 600s;
+        proxy_send_timeout 600s;
+    }
+
+    location / {
+        return 404;
+    }
+}

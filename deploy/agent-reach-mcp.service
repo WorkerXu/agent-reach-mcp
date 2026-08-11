@@ -1,0 +1,25 @@
+[Unit]
+Description=Agent Reach MCP Streamable HTTP Server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=agentreach
+Group=agentreach
+WorkingDirectory=/opt/agent-reach-mcp
+EnvironmentFile=/etc/agent-reach-mcp.env
+ExecStart=/opt/agent-reach-mcp/.venv/bin/python -m agent_reach.integrations.mcp_server
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=full
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+[Install]
+WantedBy=multi-user.target

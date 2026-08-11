@@ -1,0 +1,25 @@
+[Unit]
+Description=Agent Reach MCP Cloudflare Quick Tunnel
+After=network-online.target nginx.service agent-reach-mcp.service
+Wants=network-online.target nginx.service
+Requires=agent-reach-mcp.service
+
+[Service]
+Type=simple
+User=agentreach
+Group=agentreach
+WorkingDirectory=/opt/agent-reach-mcp
+ExecStart=/usr/local/bin/cloudflared tunnel --no-autoupdate --url http://127.0.0.1:18420
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=full
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+[Install]
+WantedBy=multi-user.target
