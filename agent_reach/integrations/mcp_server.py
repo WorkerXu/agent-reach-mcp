@@ -150,8 +150,20 @@ def _import_channel_module(name: str):
 # Server
 # ------------------------------------------------------------------ #
 
-def create_server() -> FastMCP:
-    mcp = FastMCP("agent-reach")
+def create_server(
+    *,
+    host: str = "127.0.0.1",
+    port: int = 8000,
+    json_response: bool = False,
+    stateless_http: bool = False,
+) -> FastMCP:
+    mcp = FastMCP(
+        "agent-reach",
+        host=host,
+        port=port,
+        json_response=json_response,
+        stateless_http=stateless_http,
+    )
 
     config = Config()
     eyes = AgentReach(config)
@@ -668,22 +680,22 @@ def main():
         print(msg, file=sys.stderr)
         sys.exit(1)
 
-    mcp = create_server()
     transport = os.environ.get("AGENT_REACH_MCP_TRANSPORT", "stdio").strip().lower()
     if transport == "streamable-http":
         host = os.environ.get("AGENT_REACH_MCP_HOST", "127.0.0.1")
         port = int(os.environ.get("AGENT_REACH_MCP_PORT", "18420"))
-        mcp.run(
-            transport="streamable-http",
+        mcp = create_server(
             host=host,
             port=port,
             json_response=True,
             stateless_http=True,
         )
+        mcp.run(transport="streamable-http")
         return
     if transport != "stdio":
         print("AGENT_REACH_MCP_TRANSPORT must be stdio or streamable-http", file=sys.stderr)
         sys.exit(2)
+    mcp = create_server()
     mcp.run(transport="stdio")
 
 
