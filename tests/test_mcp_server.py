@@ -301,10 +301,15 @@ class TestSearch:
     @pytest.mark.asyncio
     async def test_search_reddit_uses_cli(self, mcp):
         """Reddit search should call rdt-cli."""
-        with patch("agent_reach.integrations.mcp_server._run_cli", return_value=CliResult(success=True, stdout="[]")):
+        with patch(
+            "agent_reach.integrations.mcp_server._run_cli",
+            return_value=CliResult(success=True, stdout='{"ok": true, "data": [{"title": "test"}]}'),
+        ) as mock_cli:
             content, metadata = await mcp.call_tool("search", {"platform": "reddit", "query": "test", "limit": 3})
             data = json.loads(content[0].text)
             assert data["platform"] == "reddit"
+            assert data["results"] == [{"title": "test"}]
+            assert mock_cli.call_args.args[1] == ["search", "test", "--limit", "3", "--compact", "--json"]
 
     @pytest.mark.asyncio
     async def test_search_bilibili_uses_cli(self, mcp):
@@ -370,6 +375,7 @@ class TestTrending:
             data = json.loads(content[0].text)
             assert data["platform"] == "reddit"
             assert mock_cli.call_count == 2
+            assert mock_cli.call_args_list[0].args[1] == ["popular", "--limit", "3", "--compact", "--json"]
 
 
 # ------------------------------------------------------------------ #

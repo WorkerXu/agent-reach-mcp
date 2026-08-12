@@ -363,9 +363,12 @@ Returns JSON: {"results": [...], "platform": str, "query": str}
             return json.dumps({"results": results, "platform": "github", "query": query}, ensure_ascii=False)
 
         if platform == "reddit":
-            result = _run_cli("rdt", ["search", query, "--limit", str(limit), "-f", "json"], timeout=20)
+            # rdt-cli 0.4.x uses --json and wraps structured payloads in
+            # {"ok": true, "data": ...}; older releases returned the list directly.
+            result = _run_cli("rdt", ["search", query, "--limit", str(limit), "--compact", "--json"], timeout=20)
             if result.success:
-                results = json.loads(result.stdout) if result.stdout.strip() else []
+                payload = json.loads(result.stdout) if result.stdout.strip() else []
+                results = payload.get("data", payload) if isinstance(payload, dict) else payload
             else:
                 results = [{"error": result.error or "rdt-cli not installed or not authenticated. Install: uv tool install rdt-cli"}]
             return json.dumps({"results": results, "platform": "reddit", "query": query}, ensure_ascii=False)
@@ -425,9 +428,10 @@ Returns JSON: {"results": [...], "platform": str}
             return json.dumps({"results": results, "platform": platform}, ensure_ascii=False)
 
         if platform == "reddit":
-            rdt_result = _run_cli("rdt", ["hot", "--limit", str(limit), "-f", "json"], timeout=20)
+            rdt_result = _run_cli("rdt", ["popular", "--limit", str(limit), "--compact", "--json"], timeout=20)
             if rdt_result.success:
-                results = json.loads(rdt_result.stdout) if rdt_result.stdout.strip() else []
+                payload = json.loads(rdt_result.stdout) if rdt_result.stdout.strip() else []
+                results = payload.get("data", payload) if isinstance(payload, dict) else payload
             else:
                 opencli_result = _run_cli("opencli", ["reddit", "hot", "--limit", str(limit)], timeout=20)
                 if opencli_result.success:
